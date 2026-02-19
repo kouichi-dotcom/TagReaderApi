@@ -1,0 +1,6 @@
+@TagReaderApi_HostAddress = http://localhost:5262
+
+GET {{TagReaderApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
