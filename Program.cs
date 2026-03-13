@@ -1,3 +1,7 @@
+// dotnet run のみ（プロファイル未指定）のときはローカルDBにする。本番DBは dotnet run --launch-profile http-production
+if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")))
+    Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -31,6 +35,10 @@ if (!app.Environment.IsDevelopment())
 }
 app.UseAuthorization();
 app.MapControllers();
+
+// アプリが本番DBかローカルDBかを判定するため（環境名を返す）
+app.MapGet("/api/environment", () =>
+    Results.Ok(new { environment = app.Environment.EnvironmentName }));
 
 var summaries = new[]
 {

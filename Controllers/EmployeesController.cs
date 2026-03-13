@@ -55,4 +55,51 @@ public class EmployeesController : ControllerBase
 
         return Ok(employee);
     }
+
+    /// <summary>
+    /// [担当者台帳] から 0 &lt; 担当者コード &lt;= maxCode の範囲で担当者一覧を一括取得する。
+    /// アプリ初回起動時の担当者キャッシュ用。
+    /// </summary>
+    /// <param name="minCode">最小担当者コード（省略時は 1）</param>
+    /// <param name="maxCode">最大担当者コード（省略時は 101）</param>
+    [HttpGet("all")]
+    [ProducesResponseType(typeof(IEnumerable<EmployeeResponse>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAllInRange(
+        [FromQuery] int? minCode,
+        [FromQuery] int? maxCode,
+        CancellationToken cancellationToken = default)
+    {
+        var min = minCode ?? 1;
+        var max = maxCode ?? 101;
+        if (min < 1 || max < min)
+            return BadRequest("minCode は 1 以上、maxCode は minCode 以上で指定してください。");
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        const string sql = @"
+            SELECT [担当者コード], [担当者氏名]
+            FROM [dbo].[担当者台帳]
+            WHERE [担当者コード] > @min AND [担当者コード] <= @max
+            ORDER BY [担当者コード]";
+
+        await using var cmd = new SqlCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@min", min);
+        cmd.Parameters.AddWithValue("@max", max);
+
+        var list = new List<EmployeeResponse>();
+        await using (var reader = await cmd.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                list.Add(new EmployeeResponse
+                {
+                    EmployeeCode = reader.GetInt16(0),
+                    EmployeeName = reader.IsDBNull(1) ? string.Empty : reader.GetString(1)
+                });
+            }
+        }
+
+        return Ok(list);
+    }
 }

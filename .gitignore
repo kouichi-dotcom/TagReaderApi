@@ -38,6 +38,7 @@ artifacts/
 
 # User-specific
 appsettings.Development.json
+appsettings.Production.json
 appsettings.*.local.json
 *.rsuser
 

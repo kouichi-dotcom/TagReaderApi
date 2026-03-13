@@ -1,0 +1,12 @@
+{
+  "_comment": "Copy this file to appsettings.Production.json and set your production connection string. appsettings.Production.json is gitignored.",
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=SERVER;Database=DATABASE;User Id=USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;"
+  }
+}

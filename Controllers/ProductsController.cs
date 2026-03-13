@@ -16,7 +16,7 @@ public class ProductsController : ControllerBase
     }
 
     /// <summary>
-    /// EPC（tag_id2）をキーに [ICﾀｸﾞ台帳] から tag_id2, 商品ｺｰﾄﾞ, 番号, tag_mode2 を取得する。
+    /// EPC（tag_id2）をキーに [ICタグ台帳] から tag_id2, 商品ｺｰﾄﾞ, 番号, tag_mode2 を取得する。
     /// </summary>
     /// <param name="epc">タグID（tag_id2 と一致させる文字列）</param>
     [HttpGet]
@@ -30,10 +30,10 @@ public class ProductsController : ControllerBase
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
-        // [ICﾀｸﾞ台帳] + [商品台帳] で 商品名 を取得
+        // [ICタグ台帳] + [商品台帳] で 商品名 を取得
         const string sql = @"
             SELECT i.[tag_id2], i.[商品ｺｰﾄﾞ], i.[番号], i.[tag_mode2], s.[商品名]
-            FROM [dbo].[ICﾀｸﾞ台帳] i
+            FROM [dbo].[ICタグ台帳] i
             LEFT JOIN [dbo].[商品台帳] s ON s.[商品コード] = i.[商品ｺｰﾄﾞ]
             WHERE i.[tag_id2] = @epc";
 
@@ -57,7 +57,7 @@ public class ProductsController : ControllerBase
     }
 
     /// <summary>
-    /// [ICﾀｸﾞ台帳] からランダムに N 件取得し、[商品台帳] の商品名を JOIN して返す。
+    /// [ICタグ台帳] からランダムに N 件取得し、[商品台帳] の商品名を JOIN して返す。
     /// タグリーダーがない環境で「読み取りシミュレート」用。
     /// </summary>
     [HttpGet("random")]
@@ -71,7 +71,7 @@ public class ProductsController : ControllerBase
 
         const string sql = @"
             SELECT TOP (@count) i.[tag_id2], i.[商品ｺｰﾄﾞ], i.[番号], i.[tag_mode2], s.[商品名]
-            FROM [dbo].[ICﾀｸﾞ台帳] i
+            FROM [dbo].[ICタグ台帳] i
             LEFT JOIN [dbo].[商品台帳] s ON s.[商品コード] = i.[商品ｺｰﾄﾞ]
             ORDER BY NEWID()";
 
@@ -93,5 +93,74 @@ public class ProductsController : ControllerBase
         }
 
         return Ok(list);
+    }
+
+    /// <summary>
+    /// [商品台帳] から [現存する商品] = 1 の商品一覧を取得。アプリ初回起動時の商品名キャッシュ用。
+    /// </summary>
+    [HttpGet("catalog")]
+    [ProducesResponseType(typeof(IEnumerable<ProductCatalogItemDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetCatalog(CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        const string sql = @"
+            SELECT [商品コード], [商品名]
+            FROM [dbo].[商品台帳]
+            WHERE [現存する商品] = 1
+            ORDER BY [商品コード]";
+
+        await using var cmd = new SqlCommand(sql, connection);
+        var list = new List<ProductCatalogItemDto>();
+        await using (var reader = await cmd.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                list.Add(new ProductCatalogItemDto
+                {
+                    ProductCode = reader.GetInt32(0),
+                    ProductName = reader.IsDBNull(1) ? string.Empty : reader.GetString(1)
+                });
+            }
+        }
+
+        return Ok(list);
+    }
+
+    /// <summary>
+    /// 商品コードをキーに [商品台帳] から 1 件取得。オンデマンド用。
+    /// </summary>
+    [HttpGet("by-code")]
+    [ProducesResponseType(typeof(ProductCatalogItemDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetByCode([FromQuery] int? code, CancellationToken cancellationToken = default)
+    {
+        if (code == null)
+            return BadRequest("code を指定してください。");
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        const string sql = @"
+            SELECT [商品コード], [商品名]
+            FROM [dbo].[商品台帳]
+            WHERE [商品コード] = @code";
+
+        await using var cmd = new SqlCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@code", code.Value);
+
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+            return NotFound();
+
+        var item = new ProductCatalogItemDto
+        {
+            ProductCode = reader.GetInt32(0),
+            ProductName = reader.IsDBNull(1) ? string.Empty : reader.GetString(1)
+        };
+
+        return Ok(item);
     }
 }

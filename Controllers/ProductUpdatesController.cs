@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using TagReaderApi.Models;
@@ -10,14 +11,16 @@ namespace TagReaderApi.Controllers;
 public class ProductUpdatesController : ControllerBase
 {
     private readonly string _connectionString;
+    private readonly bool _isDevelopment;
 
-    public ProductUpdatesController(IConfiguration configuration)
+    public ProductUpdatesController(IConfiguration configuration, IWebHostEnvironment env)
     {
         _connectionString = configuration.GetConnectionString("DefaultConnection") ?? string.Empty;
+        _isDevelopment = env.IsDevelopment();
     }
 
     /// <summary>
-    /// 商品データ（ステータス等）の変更を送信し、[ICﾀｸﾞ台帳] の tag_mode2 を更新する。
+    /// 商品データ（ステータス等）の変更を送信し、[ICタグ台帳] の tag_mode2 を更新する。
     /// </summary>
     [HttpPost]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -42,14 +45,26 @@ public class ProductUpdatesController : ControllerBase
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
-        const string sql = @"
-            UPDATE [dbo].[ICﾀｸﾞ台帳]
-            SET [tag_mode2] = @status
+        // テスト環境（Development）のみ [ICタグ台帳].tag_mode に保管場所（1=本社,2=山川,3=東風平,4=友寄）を記録。本番では更新しない。
+        var tagMode = _isDevelopment && body.StorageLocation is >= 1 and <= 4 ? body.StorageLocation : (int?)null;
+        var sql = tagMode.HasValue
+            ? @"
+            UPDATE [dbo].[ICタグ台帳]
+            SET [tag_mode2] = @status,
+                [tag_mode] = @tagMode,
+                [updated] = CONVERT(DATETIME, CONVERT(VARCHAR(19), GETDATE(), 120), 120)
+            WHERE LTRIM(RTRIM([tag_id2])) = @epc"
+            : @"
+            UPDATE [dbo].[ICタグ台帳]
+            SET [tag_mode2] = @status,
+                [updated] = CONVERT(DATETIME, CONVERT(VARCHAR(19), GETDATE(), 120), 120)
             WHERE LTRIM(RTRIM([tag_id2])) = @epc";
 
         await using var cmd = new SqlCommand(sql, connection);
         cmd.Parameters.Add(new SqlParameter("@epc", System.Data.SqlDbType.NVarChar, 50) { Value = epc });
         cmd.Parameters.Add(new SqlParameter("@status", System.Data.SqlDbType.NVarChar, 30) { Value = status.Trim() });
+        if (tagMode.HasValue)
+            cmd.Parameters.Add(new SqlParameter("@tagMode", System.Data.SqlDbType.Int) { Value = tagMode.Value });
 
         var rows = await cmd.ExecuteNonQueryAsync(cancellationToken);
         if (rows == 0)
@@ -67,10 +82,10 @@ public class ProductUpdatesController : ControllerBase
         if (!string.IsNullOrWhiteSpace(body.UserId) && int.TryParse(body.UserId.Trim(), out var parsed))
             sCode = parsed;
 
-        // read_time は秒まで（コンマ秒・ミリ秒は不要）
+        // read_time は秒まで（コンマ秒・ミリ秒は不要）。受付番号=0, mark=0, complete=1, Remarks=NULL
         const string insertLogSql = @"
-            INSERT INTO [dbo].[tag_table4] ([read_time], [tag_id2], [tag_mode], [s_code])
-            VALUES (CONVERT(DATETIME, CONVERT(VARCHAR(19), GETDATE(), 120), 120), @epcLog, @statusLog, @sCode)";
+            INSERT INTO [dbo].[tag_table4] ([read_time], [tag_id2], [tag_mode], [s_code], [受付番号], [mark], [complete], [Remarks])
+            VALUES (CONVERT(DATETIME, CONVERT(VARCHAR(19), GETDATE(), 120), 120), @epcLog, @statusLog, @sCode, 0, 0, 1, NULL)";
         await using var cmdLog = new SqlCommand(insertLogSql, connection);
         cmdLog.Parameters.Add(new SqlParameter("@epcLog", System.Data.SqlDbType.NVarChar, 50) { Value = epc });
         cmdLog.Parameters.Add(new SqlParameter("@statusLog", System.Data.SqlDbType.NVarChar, 50) { Value = status.Trim() });
