@@ -36,3 +36,13 @@ git push -u origin main
 - **SSH**: あらかじめ SSH キーを GitHub に登録している必要があります
 
 以上で TagReaderApi が GitHub に保存されます。
+
+---
+
+## MacBook で開発を引き継ぐ場合（プッシュ後）
+
+```bash
+git clone https://github.com/YOUR_USERNAME/TagReaderApi.git
+cd TagReaderApi
+# .NET が入っていれば: dotnet restore / dotnet run
+```
