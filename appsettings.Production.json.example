@@ -6,6 +6,10 @@
       "Microsoft.AspNetCore": "Warning"
     }
   },
+  "Database": {
+    "Kind": "Production",
+    "ReadOnly": true
+  },
   "ConnectionStrings": {
     "DefaultConnection": "Server=SERVER;Database=DATABASE;User Id=USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;"
   }

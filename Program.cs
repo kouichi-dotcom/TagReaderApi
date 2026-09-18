@@ -36,9 +36,14 @@ if (!app.Environment.IsDevelopment())
 app.UseAuthorization();
 app.MapControllers();
 
-// アプリが本番DBかローカルDBかを判定するため（環境名を返す）
-app.MapGet("/api/environment", () =>
-    Results.Ok(new { environment = app.Environment.EnvironmentName }));
+// アプリが読み取り専用かどうかを判定するため（ASPNETCORE_ENVIRONMENT ではなく Database 設定を返す）
+app.MapGet("/api/environment", (IConfiguration config, IWebHostEnvironment env) =>
+    Results.Ok(new
+    {
+        environment = env.EnvironmentName,
+        databaseKind = config["Database:Kind"] ?? "Local",
+        readOnly = config.GetValue("Database:ReadOnly", false),
+    }));
 
 var summaries = new[]
 {

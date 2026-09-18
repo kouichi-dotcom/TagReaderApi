@@ -44,6 +44,9 @@ public class ReceptionSlipDto
     /// <summary>処理者（担当者コード）に対応する担当者氏名。[担当者台帳] から取得</summary>
     public string? HandlerName { get; set; }
 
+    /// <summary>現場台帳の緯度経度（例: "26.08774146098248,127.69902673891113"）。未記録時は null</summary>
+    public string? LatLng { get; set; }
+
     /// <summary>受付明細（受付番号が同じもの。商品名・台数・単位名を表示用に展開）</summary>
     public List<ReceptionDetailItemDto> Details { get; set; } = new();
 }

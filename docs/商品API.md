@@ -9,7 +9,18 @@
 | GET | `/api/products` | EPC をキーに商品情報取得（ICタグ台帳 + 商品台帳） |
 | GET | `/api/products/random` | ランダムに N 件取得（読み取りシミュレート用） |
 | GET | `/api/products/catalog` | 商品台帳から現存商品一覧を一括取得（キャッシュ用） |
+| GET | `/api/products/tag-ledger` | ICタグ台帳から tag_id2・商品コード・番号を一括取得（日次キャッシュ用・廃棄除外） |
 | GET | `/api/products/by-code` | 商品コードで 1 件取得（オンデマンド用） |
+
+---
+
+## GET /api/products/tag-ledger（タグ台帳一括）
+
+[ICタグ台帳] の `tag_id2`, `商品ｺｰﾄﾞ`, `番号` を一括で返す。`tag_mode2 = 廃棄` は除外。アプリは **1日の初回起動**で取得して端末にキャッシュする。
+
+### レスポンス
+
+- **200** … `[{ "tagId2": string, "productCode": number|null, "number": number|null }, ...]`
 
 ---
 

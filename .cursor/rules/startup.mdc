@@ -1,0 +1,26 @@
+---
+description: TagReaderApiの起動コマンド。ユーザーがAPI起動を頼んだらこの手順で実行する
+alwaysApply: true
+---
+
+# 起動コマンド（TagReaderApi）
+
+ユーザーが API 起動を頼んだら、説明だけで終わらせず **Shell で実際に起動**する。長時間プロセスは `block_until_ms: 0` でバックグラウンド起動。詳細: `docs/ローカル起動.md`
+
+## パス
+
+- API: `C:\dev\TagReaderApi`
+- URL: `http://localhost:5262`
+
+## コマンド
+
+| 対象 | コマンド |
+|------|----------|
+| ローカルDB | `cd C:\dev\TagReaderApi; dotnet run --launch-profile http` |
+| 本番DB | `cd C:\dev\TagReaderApi; dotnet run --launch-profile http-production` |
+
+- DB 未指定 → ローカル（`http`）
+- 「Windows でローカルDBで起動」などアプリ込みの依頼 → API を上記で起動したうえで、アプリ側は `C:\dev\tag_reader_app` の `flutter run -d windows`（実機なら `flutter run -d A142` または `00067245O000580`）も起動
+- 既に 5262 で動いていれば二重起動しない
+- 本番DB時は書き込み注意を一言伝える
+- 確認: `GET http://localhost:5262/api/environment`

@@ -11,7 +11,9 @@
 | `date` | DateTime? | 受付日（yyyy-MM-dd）。省略時は**当日** |
 | `assigneeCode` | string? | 担当者コード（配達担当）。処理者と一致する伝票を表示 |
 | `unassignedOnly` | bool | `true`: 配達担当者未定の伝票のみ（処理者未入力）。`false`: 処理者=assigneeCode の伝票 |
-| `subjects` | string? | 用件で絞り込み（カンマ区切り）。例: `来店(納品),来店(返品)`。指定時は日付絞りをせず**最新10件** |
+| `subjects` | string? | 用件で絞り込み（カンマ区切り）。例: `来店(納品),来店(返品)`。`assigneeCode` と併用可。date 未指定時は全期間から最新順 |
+| `limit` | int | 取得件数（1〜50）。省略時 **10** |
+| `offset` | int | 先頭からスキップする件数。省略時 **0**（ページング用） |
 
 ### 絞り込み条件
 

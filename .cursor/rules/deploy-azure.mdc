@@ -1,0 +1,77 @@
+---
+description: TagReaderApi を Azure App Service へデプロイする手順。「Azureにデプロイして」等の依頼で実行する
+alwaysApply: true
+---
+
+# Azure デプロイ（TagReaderApi）
+
+ユーザーが Azure / App Service への API デプロイを頼んだら、説明だけで終わらせず **Shell で実際にデプロイ**する。
+
+## 言い方の解釈
+
+次のような依頼はすべてこの手順を指す:
+
+- 「Azureにデプロイして」「Azureへデプロイして」
+- 「App Serviceにデプロイして」
+- 「APIをAzureに上げて」「本番APIを更新して」
+- 「修正したらデプロイして」（直前の会話で API 修正・ローカル確認済みの文脈）
+
+## パス
+
+- API プロジェクト: `C:\dev\TagReaderApi`
+- デプロイスクリプト: `C:\dev\TagReaderApi\scripts\deploy-azure.ps1`
+- App Service: `ohmiyakoki-tagapp-api`
+- リソースグループ: `rg-ohmiyakoki-tagapp-api`
+
+## コマンド
+
+```powershell
+cd C:\dev\TagReaderApi; .\scripts\deploy-azure.ps1
+```
+
+スクリプトは以下を自動実行する:
+
+1. `dotnet publish` (Release) → **一時フォルダ**（`%TEMP%` 配下）
+2. 開発用設定ファイルを除外
+3. `tar` で `deploy.zip` 作成
+4. `az webapp deploy` で ZIP デプロイ
+5. `az webapp restart`
+6. `/api/environment` をリトライ付きで疎通確認
+
+## 前提・注意
+
+- Azure CLI (`az`) がインストール済みで `az login` 済みであること
+- **Azure Portal の接続設定（DefaultConnection、Hybrid Connection 等）は変更しない**
+- 秘密情報（接続文字列、SA パスワード等）をスクリプト・ソース・Git に書かない
+- `publish/` と `deploy.zip` は Git 管理外
+- API ソースの機能変更はデプロイ依頼だけでは行わない（修正＋デプロイの依頼なら先に修正・ローカル確認）
+
+## deploy-azure.ps1 を編集するときの禁止事項（再発防止）
+
+過去にデプロイ失敗した原因。スクリプト修正時は必ず守る:
+
+| 問題 | 対策 |
+|------|------|
+| PowerShell が `[1/5]` を型指定と誤解釈 | ステップ表示は `(1/5)` 形式。`[...]` をダブルクォート文字列に入れない |
+| 日本語メッセージでパースエラー | スクリプト内メッセージは **ASCII のみ**（UTF-8 BOM なし環境対策） |
+| `publish/` フォルダのファイルロック | プロジェクト直下ではなく `%TEMP%` の一意フォルダへ publish |
+| `Compress-Archive` が DLL をロック | ZIP 作成は **`tar -a -c -f`** を使う |
+| 再起動直後に疎通確認が失敗 | `/api/environment` は最大 6 回リトライ（10 秒間隔） |
+| 開発用・ローカル本番設定が本番 ZIP に混入 | `.csproj` で `CopyToPublishDirectory=Never` + スクリプトでも `appsettings.Development.json` / `appsettings.Production.json` を削除 |
+
+## 修正＋デプロイの依頼時
+
+例: 「APIを修正してローカルテスト後、問題なければAzureへデプロイして」
+
+1. API を修正
+2. ローカルで `dotnet run --launch-profile http` 等で確認
+3. 問題なければ `.\scripts\deploy-azure.ps1` を実行
+4. デプロイ後に `/api/environment` と変更したエンドポイントを確認
+
+## 疎通確認 URL
+
+デプロイ後の本番 URL はスクリプトが `az webapp show` で取得する。手動確認する場合:
+
+```powershell
+Invoke-RestMethod "https://ohmiyakoki-tagapp-api-aygbh8h5gsh4gwc0.japanwest-01.azurewebsites.net/api/environment"
+```

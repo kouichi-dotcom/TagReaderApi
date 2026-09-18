@@ -37,6 +37,10 @@ project.lock.json
 project.fragment.lock.json
 artifacts/
 
+# Azure deploy artifacts
+deploy.zip
+publish-test/
+
 # User-specific
 appsettings.Development.json
 appsettings.Production.json
@@ -46,3 +50,7 @@ appsettings.*.local.json
 # JetBrains Rider
 .idea/
 *.sln.iml
+
+publish.zip
+tmp_*.txt
+
