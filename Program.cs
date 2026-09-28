@@ -33,6 +33,7 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
+app.UseMiddleware<TagReaderApi.Middleware.ReadOnlyMiddleware>();
 app.UseAuthorization();
 app.MapControllers();
 

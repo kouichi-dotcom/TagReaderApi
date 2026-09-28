@@ -1,17 +1,32 @@
 # TagReaderApi Azure App Service ZIP deploy
-# Usage: cd C:\dev\TagReaderApi; .\scripts\deploy-azure.ps1
+# Usage:
+#   cd C:\dev\TagReaderApi; .\scripts\deploy-azure.ps1
+#   cd C:\dev\TagReaderApi; .\scripts\deploy-azure.ps1 -Target staging
+#   cd C:\dev\TagReaderApi; .\scripts\deploy-azure.ps1 -Target prod -ConfirmProduction
 #
 # Script rules (do not change without reason):
 # - Keep messages ASCII-only (Windows PowerShell 5.1 encoding issues with UTF-8 without BOM)
 # - Do not use [n/n] inside double-quoted strings ([...] is parsed as a type literal)
 # - Publish to a unique temp folder (project-root publish/ can be locked by AV or local dotnet run)
 # - Use tar for ZIP creation (Compress-Archive fails on locked nested files)
+# - Default target is staging. Production requires -Target prod -ConfirmProduction
 
 #Requires -Version 5.1
+param(
+    [ValidateSet("staging", "prod")]
+    [string]$Target = "staging",
+    # Required when -Target prod (prevents accidental production deploy)
+    [switch]$ConfirmProduction
+)
+
 $ErrorActionPreference = "Stop"
 
 $ResourceGroup = "rg-ohmiyakoki-tagapp-api"
-$AppName = "ohmiyakoki-tagapp-api"
+$AppNameByTarget = @{
+    staging = "ohmiyakoki-tagapp-api"
+    prod    = "ohmiyakoki-tagapp-api-prod"
+}
+$AppName = $AppNameByTarget[$Target]
 $HealthCheckPath = "/api/environment"
 $HealthCheckMaxAttempts = 6
 $HealthCheckIntervalSec = 10
@@ -62,7 +77,15 @@ function Invoke-HealthCheck([string]$Url) {
     }
 }
 
+if ($Target -eq "prod" -and -not $ConfirmProduction) {
+    throw "Production deploy blocked. Use: .\scripts\deploy-azure.ps1 -Target prod -ConfirmProduction`nDefault target is staging ($($AppNameByTarget['staging']))."
+}
+
 Write-Host "=== TagReaderApi Azure Deploy ===" -ForegroundColor Cyan
+Write-Host "Target: $Target / App: $AppName / rg: $ResourceGroup" -ForegroundColor Cyan
+if ($Target -eq "prod") {
+    Write-Host "WARNING: Deploying to PRODUCTION (read-only baseline: prod-readonly)" -ForegroundColor Red
+}
 
 Ensure-Command "dotnet" "Install .NET SDK from https://dotnet.microsoft.com/download"
 Ensure-Command "az" "Install Azure CLI from https://aka.ms/installazurecliwindows"
@@ -146,6 +169,13 @@ try {
     $response = Invoke-HealthCheck $healthUrl
     Write-Host "OK: $healthUrl" -ForegroundColor Green
     $response | ConvertTo-Json -Depth 5
+
+    if ($Target -eq "prod") {
+        $ro = $response.readOnly
+        if ($ro -ne $true) {
+            Write-Host "WARNING: Production /api/environment readOnly is not true (value=$ro). Check App Service settings." -ForegroundColor Red
+        }
+    }
 }
 finally {
     Pop-Location
@@ -154,4 +184,4 @@ finally {
     }
 }
 
-Write-Host "=== Deploy complete ===" -ForegroundColor Green
+Write-Host "=== Deploy complete ($Target) ===" -ForegroundColor Green

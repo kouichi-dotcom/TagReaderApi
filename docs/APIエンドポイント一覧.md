@@ -8,15 +8,18 @@ TagReaderApi が提供する問い合わせ先の総覧。詳細仕様は各個�
 
 ## ベース URL
 
-| 環境 | ベース URL |
-|------|------------|
-| ローカル | `http://localhost:5262` |
-| Azure（正式・既定ホスト） | `https://ohmiyakoki-tagapp-api-aygbh8h5gsh4gwc0.japanwest-01.azurewebsites.net` |
+| 環境 | App Service | ベース URL |
+|------|-------------|------------|
+| ローカル | （自機） | `http://localhost:5262` |
+| Azure **staging（テスト）** | `ohmiyakoki-tagapp-api` | `https://ohmiyakoki-tagapp-api-aygbh8h5gsh4gwc0.japanwest-01.azurewebsites.net` |
+| Azure **prod（本番・読取版）** | `ohmiyakoki-tagapp-api-prod` | `https://ohmiyakoki-tagapp-api-prod-gsdcabb4gzbzcyaw.japanwest-01.azurewebsites.net` |
 
-確認時は `{ベースURL}` + 下表のパス。例:  
+確認時は `{ベースURL}` + 下表のパス。例（staging）:  
 `https://ohmiyakoki-tagapp-api-aygbh8h5gsh4gwc0.japanwest-01.azurewebsites.net/api/environment`
 
-> **注意:** `https://ohmiyakoki-tagapp-api.azurewebsites.net` はこの App Service には割り当てられていません（DNS も存在しない）。必ず上の `japanwest-01` 付き URL を使う。
+本番の基準設定（`Production` / `readOnly=true` / `API_READ_ONLY=true`）は [本番読取版_基準設定.md](./本番読取版_基準設定.md)。
+
+> **注意:** `https://ohmiyakoki-tagapp-api.azurewebsites.net` や短い既定ドメインはこの App Service には割り当てられていません。必ず上の `japanwest-01` 付き URL を使う。
 
 > **注意:** DB を使う API は、Azure 側の接続文字列と Hybrid Connection（等）が揃うまで失敗する。  
 > DB 不要でデプロイ確認できるのは **`GET /api/environment`**（とサンプルの `/weatherforecast`）のみ。

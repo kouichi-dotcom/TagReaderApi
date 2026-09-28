@@ -24,3 +24,8 @@ alwaysApply: true
 - 既に 5262 で動いていれば二重起動しない
 - 本番DB時は書き込み注意を一言伝える
 - 確認: `GET http://localhost:5262/api/environment`
+
+## Azure デプロイ
+
+- 「Azureにデプロイ」→ **staging のみ**（`.\scripts\deploy-azure.ps1`）
+- 「本番にデプロイ」→ `-Target prod -ConfirmProduction`（詳細: `deploy-azure.mdc` / `docs/本番読取版_基準設定.md`）
