@@ -14,7 +14,7 @@
 |------------|-----|------|------|
 | epc | string | ○ | タグID（[ICタグ台帳].[tag_id2] と一致） |
 | read_at | string | ○ | 読み取り日時。API ではログ用に利用 |
-| changes | object | ○ | 変更内容。`status` にステータス文字列（例: "修理中", "ＯＫ"） |
+| changes | object | ○ | 変更内容。`status` は **JSON string のみ**（例: `"修理中"`, `"ＯＫ"`）。数値・配列・object・boolean は不可。trim 後 **1〜30文字** |
 | user_id | string | - | 担当者コード。整数に変換できれば [tag_table4].[s_code] に記録 |
 | product_id | string | - | 任意 |
 | device_id | string | - | 任意 |
@@ -34,7 +34,7 @@
 
 ### 2. [tag_table4] へのログ挿入
 
-更新成功後に 1 行 INSERT。
+更新成功後に 1 行 INSERT。UPDATE と INSERT は **同一トランザクション**（片方失敗時は両方ロールバック）。
 
 | 列 | 値 |
 |----|-----|
@@ -51,13 +51,24 @@ ID は IDENTITY で自動採番。
 
 ---
 
+## `changes.status` の検証
+
+| 条件 | 結果 |
+|------|------|
+| キー無し / null / 空文字 / 空白のみ | 400 |
+| JSON 型が string 以外（number / array / object / boolean） | 400 |
+| trim 後 31 文字以上 | 400（SQL へ到達しない） |
+| trim 後 1〜30 文字の string | 受付（許可値ホワイトリストは設けない） |
+
+---
+
 ## レスポンス
 
 - **200 OK**  
   `{ "updated": 1, "logRecorded": true }`
 
 - **400 Bad Request**  
-  epc が空、または changes.status が未指定。
+  epc が空、または changes.status が未指定・非 string・31文字以上。
 
 - **404 Not Found**  
   指定した epc（tag_id2）に一致する行が [ICタグ台帳] に存在しない。  

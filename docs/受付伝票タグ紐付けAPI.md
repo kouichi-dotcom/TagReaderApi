@@ -61,11 +61,15 @@
 4. 用件が「交換」で `link_mode` が不正／未指定のときは **400**
 5. 各 EPC が [ICタグ台帳] に無ければ **404**（全体ロールバック）
 6. 各タグについて:
-   - [ICタグ台帳]: `tag_mode2` をモードに応じて更新、`updated` を秒単位で更新
-   - 同一受付＋同一 `tag_id2` かつ（`complete=0`、または complete=1 で同 `tag_mode`）の [tag_table3] 行を DELETE（再送対策）
-   - [tag_table3] に INSERT（`印刷=0`, `mark=0`, `tag_mode` / `complete` はモードに応じた値, `受付番号`=パスの値）
+   - 同一受付＋同一 `tag_id2` で `complete=1` の行が **1 件でもあれば**既処理としてスキップ（**tag_mode は見ない**）。ICタグ台帳も tag_table3 も変更せず、warnings に「既に処理済みのためスキップしました。」を追加。`linked` には含めない
+   - 上記以外（complete=1 が無い場合）:
+     - [ICタグ台帳]: `tag_mode2` をモードに応じて更新、`updated` を秒単位で更新
+     - 同一受付＋同一 `tag_id2` かつ `complete=0` の [tag_table3] 行を DELETE（再送対策）
+     - [tag_table3] に INSERT（`印刷=0`, `mark=0`, `tag_mode` / `complete` はモードに応じた値, `受付番号`=パスの値）
 
 納品伝票／納品明細は **更新しない**。番号の付与・入れ替えは既存 Reception.cs の転記処理に任せる。
+
+※ UNIQUE 制約は付けない（交換などで別 tag_mode の行が同居し得るため）。既処理判定は **受付番号 + EPC + complete=1** のみ。
 
 ### 用件による書き込みモード
 
@@ -99,8 +103,8 @@
 | プロパティ | 説明 |
 |------------|------|
 | receptionNo | 受付番号 |
-| linked | 紐付け成功件数 |
-| warnings | 商品コード不一致など（処理は成功） |
+| linked | 実際に紐付け（INSERT）した件数。既処理スキップ分は含まない |
+| warnings | 商品コード不一致・既処理スキップなど（HTTP は成功） |
 
 ### エラー
 

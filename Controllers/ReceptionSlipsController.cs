@@ -248,6 +248,7 @@ public class ReceptionSlipsController : ControllerBase
     /// 用件「交換」+ link_mode=交換返品: tag_mode2=整備中 / tag_mode=交換返品 / complete=1。
     /// それ以外（&lt;配達&gt;・来店(納品) 等）: tag_mode2=貸出中 / tag_mode=納品 / complete=0。
     /// ※「交換（配達）」「交換（引取）」は交換ではなく配達モード扱い。
+    /// ※同一受付＋同一EPCで complete=1 があれば既処理スキップ（tag_mode は見ない。DELETE/UPDATE/INSERT/台帳変更なし）。
     /// </summary>
     [HttpPost("{receptionNo}/link-tags")]
     [ProducesResponseType(typeof(ReceptionSlipLinkTagsResponseDto), StatusCodes.Status200OK)]
@@ -382,6 +383,7 @@ public class ReceptionSlipsController : ControllerBase
 
             var warnings = new List<string>();
             var missingEpcs = new List<string>();
+            var linkedCount = 0;
 
             foreach (var (epc, productCode) in items)
             {
@@ -404,6 +406,29 @@ public class ReceptionSlipsController : ControllerBase
                         ledgerProductCode = i;
                     else if (int.TryParse(scalar.ToString(), out var parsedCode))
                         ledgerProductCode = parsedCode;
+                }
+
+                // 同一受付＋同一EPCで complete=1 が1件でもあれば既処理（tag_mode は見ない）
+                const string complete1Sql = @"
+                    SELECT COUNT(1)
+                    FROM [dbo].[tag_table3]
+                    WHERE [受付番号] = @receptionNo
+                      AND LTRIM(RTRIM([tag_id2])) = @epc
+                      AND ISNULL([complete], 0) = 1";
+                int complete1Count;
+                await using (var complete1Cmd = new SqlCommand(complete1Sql, connection, transaction))
+                {
+                    complete1Cmd.Parameters.Add(new SqlParameter("@receptionNo", System.Data.SqlDbType.Int) { Value = receptionNoInt });
+                    complete1Cmd.Parameters.Add(new SqlParameter("@epc", System.Data.SqlDbType.NVarChar, 50) { Value = epc });
+                    complete1Count = Convert.ToInt32(await complete1Cmd.ExecuteScalarAsync(cancellationToken));
+                }
+                if (complete1Count > 0)
+                {
+                    warnings.Add($"EPC {epc}: 既に処理済みのためスキップしました。");
+                    _logger.LogInformation(
+                        "link-tags: skip already-complete reception={ReceptionNo} epc={Epc}",
+                        receptionNoInt, epc);
+                    continue;
                 }
 
                 if (productCode != null && int.TryParse(productCode, out var reqCode) &&
@@ -432,24 +457,16 @@ public class ReceptionSlipsController : ControllerBase
                     await updateCmd.ExecuteNonQueryAsync(cancellationToken);
                 }
 
-                // 4. 再送対策: 未転記行、および complete=1 で同モードの行を削除
+                // 4. 再送対策: complete=0（未転記）行のみ削除してから INSERT（complete=1 は上でスキップ済み）
                 const string deleteSql = @"
                     DELETE FROM [dbo].[tag_table3]
                     WHERE [受付番号] = @receptionNo
                       AND LTRIM(RTRIM([tag_id2])) = @epc
-                      AND (
-                        ISNULL([complete], 0) = 0
-                        OR (
-                          @table3Complete = 1
-                          AND ISNULL([tag_mode], N'') = @table3TagMode
-                        )
-                      )";
+                      AND ISNULL([complete], 0) = 0";
                 await using (var deleteCmd = new SqlCommand(deleteSql, connection, transaction))
                 {
                     deleteCmd.Parameters.Add(new SqlParameter("@receptionNo", System.Data.SqlDbType.Int) { Value = receptionNoInt });
                     deleteCmd.Parameters.Add(new SqlParameter("@epc", System.Data.SqlDbType.NVarChar, 50) { Value = epc });
-                    deleteCmd.Parameters.Add(new SqlParameter("@table3Complete", System.Data.SqlDbType.Int) { Value = table3Complete });
-                    deleteCmd.Parameters.Add(new SqlParameter("@table3TagMode", System.Data.SqlDbType.NVarChar, 20) { Value = table3TagMode });
                     await deleteCmd.ExecuteNonQueryAsync(cancellationToken);
                 }
 
@@ -469,6 +486,8 @@ public class ReceptionSlipsController : ControllerBase
                     insertCmd.Parameters.Add(new SqlParameter("@table3Complete", System.Data.SqlDbType.Int) { Value = table3Complete });
                     await insertCmd.ExecuteNonQueryAsync(cancellationToken);
                 }
+
+                linkedCount++;
             }
 
             if (missingEpcs.Count > 0)
@@ -487,7 +506,7 @@ public class ReceptionSlipsController : ControllerBase
             return Ok(new ReceptionSlipLinkTagsResponseDto
             {
                 ReceptionNo = receptionNoInt.ToString(),
-                Linked = items.Count,
+                Linked = linkedCount,
                 Warnings = warnings,
             });
         }

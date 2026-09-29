@@ -2,7 +2,7 @@
 
 TagReaderApi が提供する問い合わせ先の総覧。詳細仕様は各個別ドキュメントを参照。
 
-記録日: 2026-08-25
+記録日: 2026-09-29（tag-ledger 登録系・environment 応答・アプリ対応を反映）
 
 ---
 
@@ -24,13 +24,15 @@ TagReaderApi が提供する問い合わせ先の総覧。詳細仕様は各個�
 > **注意:** DB を使う API は、Azure 側の接続文字列と Hybrid Connection（等）が揃うまで失敗する。  
 > DB 不要でデプロイ確認できるのは **`GET /api/environment`**（とサンプルの `/weatherforecast`）のみ。
 
+> **注意:** `Database:ReadOnly` / `API_READ_ONLY` が有効なとき、更新系（`POST /api/product-updates`・`POST .../link-tags`・`POST /api/products/tag-ledger` 等）は拒否される（409 等）。
+
 ---
 
 ## エンドポイント総覧
 
 | メソッド | パス | 主なクエリ / Body | DB | 用途 | 詳細 |
 |----------|------|-------------------|----|------|------|
-| GET | `/api/environment` | なし | 不要 | 環境名（Development / Production） | （Program.cs） |
+| GET | `/api/environment` | なし | 不要 | 環境名・DB種別・readOnly | （Program.cs） |
 | GET | `/weatherforecast` | なし | 不要 | テンプレートのサンプル | （Program.cs） |
 | GET | `/api/employees` | `code`（必須） | 要 | 担当者 1 件 | [担当者API.md](./担当者API.md) |
 | GET | `/api/employees/all` | `minCode`, `maxCode` | 要 | 担当者一括（キャッシュ用） | [担当者API.md](./担当者API.md) |
@@ -38,13 +40,15 @@ TagReaderApi が提供する問い合わせ先の総覧。詳細仕様は各個�
 | GET | `/api/products/random` | `count`（省略時 5） | 要 | ランダム N 件（シミュレート） | [商品API.md](./商品API.md) |
 | GET | `/api/products/catalog` | なし | 要 | 現存商品一覧（キャッシュ） | [商品API.md](./商品API.md) |
 | GET | `/api/products/tag-ledger` | なし | 要 | ICタグ台帳一括（廃棄除外） | [商品API.md](./商品API.md) |
+| GET | `/api/products/tag-ledger/next-number` | `code`（必須） | 要 | 商品コードの次番号（MAX+1） | （ProductsController） |
+| POST | `/api/products/tag-ledger` | JSON Body（`epc`, `product_code`, `number` / `auto_number`, `user_name` 等） | 要 | ICタグ台帳へ新規登録 | （ProductsController） |
 | GET | `/api/products/by-code` | `code`（必須） | 要 | 商品コード 1 件 | [商品API.md](./商品API.md) |
 | GET | `/api/products/categories` | なし | 要 | 商品区分一覧（在庫画面） | （ProductsController） |
 | GET | `/api/products/inventory` | `categoryId`（任意）, `q`（任意・商品名/コード部分一致） | 要 | 在庫集計一覧 | （ProductsController） |
 | GET | `/api/products/inventory/units` | `code`（必須） | 要 | 商品コードごとの個体一覧 | （ProductsController） |
 | GET | `/api/reception-slips` | `date`, `assigneeCode`, `unassignedOnly`, `random`, `subjects`, `limit`, `offset` | 要 | 受付伝票一覧（ページング可） | [受付台帳API.md](./受付台帳API.md) |
 | POST | `/api/reception-slips/{receptionNo}/link-tags` | JSON Body（`user_id`, `link_mode`, `items[]`） | 要 | 伝票へタグ紐付け（引取・来店(返品)／交換納品・交換返品／配達・来店(納品)） | [受付伝票タグ紐付けAPI.md](./受付伝票タグ紐付けAPI.md) |
-| POST | `/api/product-updates` | JSON Body（`epc`, `read_at`, `changes` 等） | 要 | ステータス更新 | [商品更新API.md](./商品更新API.md) |
+| POST | `/api/product-updates` | JSON Body（`epc`, `read_at`, `changes.status` 等） | 要 | ステータス更新（`status` は文字列・最大30文字） | [商品更新API.md](./商品更新API.md) |
 
 ### 計画中（未実装）
 
@@ -83,6 +87,7 @@ TagReaderApi が提供する問い合わせ先の総覧。詳細仕様は各個�
 | 商品区分 | [GET /api/products/categories](https://ohmiyakoki-tagapp-api-aygbh8h5gsh4gwc0.japanwest-01.azurewebsites.net/api/products/categories) | 区分マスタの配列 |
 | 商品カタログ | [GET /api/products/catalog](https://ohmiyakoki-tagapp-api-aygbh8h5gsh4gwc0.japanwest-01.azurewebsites.net/api/products/catalog) | 商品一覧（やや大きい） |
 | タグ台帳 | [GET /api/products/tag-ledger](https://ohmiyakoki-tagapp-api-aygbh8h5gsh4gwc0.japanwest-01.azurewebsites.net/api/products/tag-ledger) | タグ台帳（約 6,000 件・大きい） |
+| 次番号 | [GET /api/products/tag-ledger/next-number?code=1234](https://ohmiyakoki-tagapp-api-aygbh8h5gsh4gwc0.japanwest-01.azurewebsites.net/api/products/tag-ledger/next-number?code=1234) | `{"productCode":1234,"nextNumber":N}` |
 
 > **`/api/employees?code=1` が 404 になる理由**  
 > 接続失敗ではなく、**担当者コード 1 がテスト DB に存在しない**ため。  
@@ -99,10 +104,10 @@ TagReaderApi が提供する問い合わせ先の総覧。詳細仕様は各個�
 
 ```text
 GET {ベースURL}/api/environment
-→ {"environment":"Production"} など
+→ {"environment":"...","databaseKind":"Local|Test|Production","readOnly":true|false} など
 ```
 
-### DB あり
+### DB あり（参照）
 
 ```text
 GET {ベースURL}/api/employees/all?minCode=1&maxCode=10
@@ -111,6 +116,7 @@ GET {ベースURL}/api/products?epc={EPC}
 GET {ベースURL}/api/products/random?count=3
 GET {ベースURL}/api/products/catalog
 GET {ベースURL}/api/products/tag-ledger
+GET {ベースURL}/api/products/tag-ledger/next-number?code=1234
 GET {ベースURL}/api/products/by-code?code=1234
 GET {ベースURL}/api/products/categories
 GET {ベースURL}/api/products/inventory
@@ -122,15 +128,41 @@ GET {ベースURL}/api/reception-slips?unassignedOnly=true
 GET {ベースURL}/api/reception-slips?random=true
 ```
 
+### DB あり（更新・読取専用時は不可）
+
 ```http
 POST {ベースURL}/api/product-updates
 Content-Type: application/json
 
 {
   "epc": "（tag_id2）",
-  "read_at": "2026-08-25T12:00:00",
+  "read_at": "2026-09-29T12:00:00",
   "changes": { "status": "ＯＫ" },
   "user_id": "1"
+}
+```
+
+```http
+POST {ベースURL}/api/products/tag-ledger
+Content-Type: application/json
+
+{
+  "epc": "（tag_id2）",
+  "product_code": 1234,
+  "auto_number": true,
+  "user_name": "山田"
+}
+```
+
+```http
+POST {ベースURL}/api/reception-slips/{receptionNo}/link-tags
+Content-Type: application/json
+
+{
+  "user_id": "51",
+  "items": [
+    { "epc": "（tag_id2）", "product_code": "1234" }
+  ]
 }
 ```
 
@@ -149,14 +181,17 @@ Content-Type: application/json
 | `fetchRandomProducts` | `GET /api/products/random` |
 | `fetchProductCatalog` | `GET /api/products/catalog` |
 | `fetchTagLedger` | `GET /api/products/tag-ledger` |
+| `fetchNextTagNumber` | `GET /api/products/tag-ledger/next-number` |
+| `registerTagLedger` | `POST /api/products/tag-ledger` |
 | `fetchProductByCode` | `GET /api/products/by-code` |
 | `fetchProductCategories` | `GET /api/products/categories` |
 | `fetchInventory` | `GET /api/products/inventory` |
 | `fetchInventoryUnits` | `GET /api/products/inventory/units` |
 | `fetchReceptionSlips` | `GET /api/reception-slips` |
+| `submitSlipTagLinks` | `POST /api/reception-slips/{receptionNo}/link-tags` |
 | `submitProductUpdate` | `POST /api/product-updates` |
 
-ベース URL は `lib/config/api_config.dart` の `kApiBaseUrl`（`kUseLocalApi` でローカル / リモート切替）。
+ベース URL は `lib/config/api_config.dart` の `kApiBaseUrl`。接続先は `FLAVOR`（staging / prod）または明示 `APP_ENV=local` のみで決まる（未指定時に本番へフォールバックしない）。
 
 ---
 
@@ -165,9 +200,11 @@ Content-Type: application/json
 | ドキュメント | 内容 |
 |--------------|------|
 | [担当者API.md](./担当者API.md) | employees |
-| [商品API.md](./商品API.md) | products（EPC・catalog・tag-ledger・by-code 等） |
-| [受付台帳API.md](./受付台帳API.md) | reception-slips |
+| [商品API.md](./商品API.md) | products（EPC・catalog・tag-ledger GET・by-code 等） |
+| [受付台帳API.md](./受付台帳API.md) | reception-slips（一覧） |
+| [受付伝票タグ紐付けAPI.md](./受付伝票タグ紐付けAPI.md) | link-tags |
 | [商品更新API.md](./商品更新API.md) | product-updates |
 | [タグリーダー管理.md](./タグリーダー管理.md) | タグリーダー管理（**計画・未実装**） |
+| [本番読取版_基準設定.md](./本番読取版_基準設定.md) | 本番 readOnly 基準・Azure 設定 |
 | [ローカル起動.md](./ローカル起動.md) | ローカルでの起動方法 |
 | [API公開のチェックリスト.md](./API公開のチェックリスト.md) | Azure 公開手順 |
