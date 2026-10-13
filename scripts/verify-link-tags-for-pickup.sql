@@ -11,6 +11,7 @@
 --   [tag_table3].tag_mode = N'返品'
 --   [tag_table3].complete = 1
 --   tag_table3.受付番号, tag_id2, s_code, mark=0, 印刷=0, read_time
+--   [納品明細].[返却] = 1（顧客コード＋現場コード＋tag_id=EPC 一致の既存行のみ。他列は変更しない）
 --
 -- ※用件「来店(返品)」も「引取」と同じ書き込み（返品モード）
 -- 検証 SQL（配達・来店(納品)用）: scripts/verify-link-tags-for-delivery.sql
@@ -162,7 +163,34 @@ WHERE t.[受付番号] = @受付番号
   AND ISNULL(t.complete, 0) <> 1;
 
 -- ---------------------------------------------------------------------------
--- 5) 参考: 受付明細との突合イメージ
+-- 5) 納品明細の返却記録（顧客コード＋現場コード＋tag_id）
+-- ---------------------------------------------------------------------------
+SELECT
+    LTRIM(RTRIM(t.tag_id2)) AS tag_id2,
+    r.[顧客コード],
+    r.[現場コード],
+    n.id AS 納品明細id,
+    n.[伝票番号],
+    CAST(n.[返却] AS int) AS [返却],
+    CASE
+        WHEN n.id IS NULL THEN N'NG: 納品明細なし（API は警告のみ）'
+        WHEN ISNULL(n.[返却], 0) = 1 THEN N'OK: 返却=1'
+        ELSE N'NG: 返却≠1'
+    END AS chk_納品明細_返却
+FROM [dbo].[tag_table3] AS t
+INNER JOIN [dbo].[受付台帳] AS r ON r.[受付番号] = t.[受付番号]
+LEFT JOIN [dbo].[納品明細] AS n
+    ON n.[顧客コード] = r.[顧客コード]
+   AND (
+        (r.[現場コード] IS NULL AND n.[現場コード] IS NULL)
+        OR n.[現場コード] = r.[現場コード]
+       )
+   AND LTRIM(RTRIM(n.[tag_id])) = LTRIM(RTRIM(t.tag_id2))
+WHERE t.[受付番号] = @受付番号
+ORDER BY t.tag_id2, n.id;
+
+-- ---------------------------------------------------------------------------
+-- 6) 参考: 受付明細との突合イメージ
 -- ---------------------------------------------------------------------------
 SELECT
     m.[商品コード] AS 受付明細_商品コード,

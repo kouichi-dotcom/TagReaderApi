@@ -24,7 +24,15 @@ TagReaderApi が提供する問い合わせ先の総覧。詳細仕様は各個�
 > **注意:** DB を使う API は、Azure 側の接続文字列と Hybrid Connection（等）が揃うまで失敗する。  
 > DB 不要でデプロイ確認できるのは **`GET /api/environment`**（とサンプルの `/weatherforecast`）のみ。
 
-> **注意:** `Database:ReadOnly` / `API_READ_ONLY` が有効なとき、更新系（`POST /api/product-updates`・`POST .../link-tags`・`POST /api/products/tag-ledger` 等）は拒否される（409 等）。
+> **注意:** 書き込みゲートは次の順で判定する（いずれも middleware、コントローラ到達前）。
+> 1. `API_READ_ONLY=true` → すべての変更系メソッドを **403**（個別 `Writes__*` が true でも禁止）
+> 2. `API_READ_ONLY=false` のとき、対象パスのみ個別設定を確認（未設定・不正値は **false**＝禁止）
+>    - `Writes__ProductUpdates` → `POST /api/product-updates`
+>    - `Writes__TagLedger` → `POST /api/products/tag-ledger`
+>    - `Writes__LinkTags` → `POST /api/reception-slips/{receptionNo}/link-tags`
+> 3. コントローラ側の `Database:ReadOnly=true` は従来どおり **409**（middleware 通過後）
+>
+> `/api/environment` の `readOnly` は **`Database:ReadOnly` のみ**（`API_READ_ONLY` / `Writes__*` は反映しない）。
 
 ---
 
@@ -46,7 +54,7 @@ TagReaderApi が提供する問い合わせ先の総覧。詳細仕様は各個�
 | GET | `/api/products/categories` | なし | 要 | 商品区分一覧（在庫画面） | （ProductsController） |
 | GET | `/api/products/inventory` | `categoryId`（任意）, `q`（任意・商品名/コード部分一致） | 要 | 在庫集計一覧 | （ProductsController） |
 | GET | `/api/products/inventory/units` | `code`（必須） | 要 | 商品コードごとの個体一覧 | （ProductsController） |
-| GET | `/api/reception-slips` | `date`, `assigneeCode`, `unassignedOnly`, `random`, `subjects`, `limit`, `offset` | 要 | 受付伝票一覧（ページング可） | [受付台帳API.md](./受付台帳API.md) |
+| GET | `/api/reception-slips` | `date`, `assigneeCode`, `unassignedOnly`, `random`, `subjects`, `excludeSubjects`, `limit`, `offset` | 要 | 受付伝票一覧（ページング可）。確認=0・期日の直近1ヶ月・キャンセル用件除外 | [受付台帳API.md](./受付台帳API.md) |
 | POST | `/api/reception-slips/{receptionNo}/link-tags` | JSON Body（`user_id`, `link_mode`, `items[]`） | 要 | 伝票へタグ紐付け（引取・来店(返品)／交換納品・交換返品／配達・来店(納品)） | [受付伝票タグ紐付けAPI.md](./受付伝票タグ紐付けAPI.md) |
 | POST | `/api/product-updates` | JSON Body（`epc`, `read_at`, `changes.status` 等） | 要 | ステータス更新（`status` は文字列・最大30文字） | [商品更新API.md](./商品更新API.md) |
 

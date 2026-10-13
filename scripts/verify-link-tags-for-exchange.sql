@@ -10,7 +10,7 @@
 --   交換納品: ICタグ台帳.tag_mode2 = N'貸出中'
 --             tag_table3.tag_mode = N'交換納品', complete = 0, mark = 0, 印刷 = 0
 --   交換返品: ICタグ台帳.tag_mode2 = N'整備中'
---             tag_table3.tag_mode = N'交換返品', complete = 1, mark = 0, 印刷 = 0
+--             tag_table3.tag_mode = N'交換返品', complete = 0, mark = 0, 印刷 = 0
 -- =============================================================================
 
 USE [OOMIYADB];
@@ -47,7 +47,7 @@ SELECT
     CASE
         WHEN t.tag_mode = N'交換納品' AND ISNULL(t.complete, 0) = 0 AND d.tag_mode2 = N'貸出中'
             THEN N'OK: 交換納品'
-        WHEN t.tag_mode = N'交換返品' AND ISNULL(t.complete, 0) = 1 AND d.tag_mode2 = N'整備中'
+        WHEN t.tag_mode = N'交換返品' AND ISNULL(t.complete, 0) = 0 AND d.tag_mode2 = N'整備中'
             THEN N'OK: 交換返品'
         ELSE N'NG / 要確認'
     END AS chk
@@ -83,7 +83,7 @@ SELECT
          ON LTRIM(RTRIM(d.tag_id2)) = LTRIM(RTRIM(t.tag_id2))
      WHERE t.[受付番号] = @受付番号
        AND t.tag_mode = N'交換返品'
-       AND ISNULL(t.complete, 0) = 1
+       AND ISNULL(t.complete, 0) = 0
        AND ISNULL(t.mark, 0) = 0
        AND ISNULL(t.[印刷], 0) = 0
        AND d.tag_mode2 = N'整備中') AS ok_交換返品;

@@ -24,7 +24,7 @@ public class ProductsController : ControllerBase
     }
 
     /// <summary>
-    /// EPC（tag_id2）をキーに [ICタグ台帳] から tag_id2, 商品ｺｰﾄﾞ, 番号, tag_mode2 を取得する。
+    /// EPC（tag_id2）をキーに [ICタグ台帳] から tag_id2, 商品ｺｰﾄﾞ, 番号, tag_mode2, 保管場所コード を取得する。
     /// </summary>
     /// <param name="epc">タグID（tag_id2 と一致させる文字列）</param>
     [HttpGet]
@@ -40,7 +40,7 @@ public class ProductsController : ControllerBase
 
         // [ICタグ台帳] + [商品台帳] で 商品名 を取得
         const string sql = @"
-            SELECT i.[tag_id2], i.[商品ｺｰﾄﾞ], i.[番号], i.[tag_mode2], s.[商品名]
+            SELECT i.[tag_id2], i.[商品ｺｰﾄﾞ], i.[番号], i.[tag_mode2], s.[商品名], i.[保管場所コード]
             FROM [dbo].[ICタグ台帳] i
             LEFT JOIN [dbo].[商品台帳] s ON s.[商品コード] = i.[商品ｺｰﾄﾞ]
             WHERE i.[tag_id2] = @epc";
@@ -58,7 +58,8 @@ public class ProductsController : ControllerBase
             ProductCode = reader.IsDBNull(1) ? null : reader.GetInt32(1),
             Number = reader.IsDBNull(2) ? null : reader.GetInt32(2),
             Status = reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
-            ProductName = reader.IsDBNull(4) ? string.Empty : reader.GetString(4)
+            ProductName = reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
+            StorageLocationCode = reader.IsDBNull(5) ? null : reader.GetInt32(5),
         };
 
         return Ok(product);
@@ -78,7 +79,7 @@ public class ProductsController : ControllerBase
         await connection.OpenAsync(cancellationToken);
 
         const string sql = @"
-            SELECT TOP (@count) i.[tag_id2], i.[商品ｺｰﾄﾞ], i.[番号], i.[tag_mode2], s.[商品名]
+            SELECT TOP (@count) i.[tag_id2], i.[商品ｺｰﾄﾞ], i.[番号], i.[tag_mode2], s.[商品名], i.[保管場所コード]
             FROM [dbo].[ICタグ台帳] i
             LEFT JOIN [dbo].[商品台帳] s ON s.[商品コード] = i.[商品ｺｰﾄﾞ]
             ORDER BY NEWID()";
@@ -96,7 +97,8 @@ public class ProductsController : ControllerBase
                 ProductCode = reader.IsDBNull(1) ? null : reader.GetInt32(1),
                 Number = reader.IsDBNull(2) ? null : reader.GetInt32(2),
                 Status = reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
-                ProductName = reader.IsDBNull(4) ? string.Empty : reader.GetString(4)
+                ProductName = reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
+                StorageLocationCode = reader.IsDBNull(5) ? null : reader.GetInt32(5),
             });
         }
 

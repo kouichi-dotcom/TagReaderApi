@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using TagReaderApi.Models;
@@ -13,16 +12,15 @@ public class ProductUpdatesController : ControllerBase
     private const int StatusMaxLength = 30;
 
     private readonly string _connectionString;
-    private readonly bool _isDevelopment;
 
-    public ProductUpdatesController(IConfiguration configuration, IWebHostEnvironment env)
+    public ProductUpdatesController(IConfiguration configuration)
     {
         _connectionString = configuration.GetConnectionString("DefaultConnection") ?? string.Empty;
-        _isDevelopment = env.IsDevelopment();
     }
 
     /// <summary>
     /// 商品データ（ステータス等）の変更を送信し、[ICタグ台帳] の tag_mode2 を更新する。
+    /// storage_location 指定時は [保管場所コード] も更新する。
     /// </summary>
     [HttpPost]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -58,13 +56,13 @@ public class ProductUpdatesController : ControllerBase
 
         try
         {
-            // テスト環境（Development）のみ [ICタグ台帳].tag_mode に保管場所（1=本社,2=山川,3=東風平,4=友寄）を記録。本番では更新しない。
-            var tagMode = _isDevelopment && body.StorageLocation is >= 1 and <= 4 ? body.StorageLocation : (int?)null;
-            var sql = tagMode.HasValue
+            // storage_location（1〜4）指定時のみ [保管場所コード] を更新。未指定時は現状維持。
+            var storageLocationCode = body.StorageLocation is >= 1 and <= 4 ? body.StorageLocation : null;
+            var sql = storageLocationCode.HasValue
                 ? @"
             UPDATE [dbo].[ICタグ台帳]
             SET [tag_mode2] = @status,
-                [tag_mode] = @tagMode,
+                [保管場所コード] = @storageLocationCode,
                 [updated] = CONVERT(DATETIME, CONVERT(VARCHAR(19), GETDATE(), 120), 120)
             WHERE LTRIM(RTRIM([tag_id2])) = @epc"
                 : @"
@@ -77,8 +75,8 @@ public class ProductUpdatesController : ControllerBase
             {
                 cmd.Parameters.Add(new SqlParameter("@epc", System.Data.SqlDbType.NVarChar, 50) { Value = epc });
                 cmd.Parameters.Add(new SqlParameter("@status", System.Data.SqlDbType.NVarChar, StatusMaxLength) { Value = status });
-                if (tagMode.HasValue)
-                    cmd.Parameters.Add(new SqlParameter("@tagMode", System.Data.SqlDbType.Int) { Value = tagMode.Value });
+                if (storageLocationCode.HasValue)
+                    cmd.Parameters.Add(new SqlParameter("@storageLocationCode", System.Data.SqlDbType.Int) { Value = storageLocationCode.Value });
 
                 var rows = await cmd.ExecuteNonQueryAsync(cancellationToken);
                 if (rows == 0)

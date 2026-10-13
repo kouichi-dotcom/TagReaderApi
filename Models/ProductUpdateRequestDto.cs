@@ -26,7 +26,7 @@ public class ProductUpdateRequestDto
     [JsonPropertyName("user_id")]
     public string? UserId { get; set; }
 
-    /// <summary>保管場所（0=非表示, 1=本社, 2=山川, 3=東風平, 4=友寄）。テスト環境でのみ [ICタグ台帳].tag_mode に反映。</summary>
+    /// <summary>保管場所コード（1=本社, 2=山川, 3=東風平, 4=友寄）。指定時のみ [ICタグ台帳].[保管場所コード] を更新。</summary>
     [JsonPropertyName("storage_location")]
     public int? StorageLocation { get; set; }
 }

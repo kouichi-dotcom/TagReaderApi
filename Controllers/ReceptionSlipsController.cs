@@ -5,7 +5,7 @@ using TagReaderApi.Models;
 namespace TagReaderApi.Controllers;
 
 /// <summary>
-/// 受付台帳API。絞り込み: 受付日時=当日、転記済み=0、処理者=担当者コード（または未定モードで処理者未入力）。
+/// 受付台帳API。絞り込み: 確認=0、期日が直近1ヶ月（Today.AddMonths(-1)以降）、キャンセル用件(21/22/23)除外、処理者=担当者コード（または未定モードで処理者未入力）。
 /// 受付明細は受付番号で紐付け、商品名・台数・単位名を返す。
 /// </summary>
 [ApiController]
@@ -25,14 +25,15 @@ public class ReceptionSlipsController : ControllerBase
 
     /// <summary>
     /// 受付伝票一覧を取得。
-    /// 絞り込み: 受付日時が指定日（省略時は当日）、転記済み=0、処理者=担当者コード。
+    /// 絞り込み: 確認=0、期日が直近1ヶ月（Today.AddMonths(-1)以降）、キャンセル用件コード(21/22/23)除外、処理者=担当者コード。
     /// unassignedOnly=true のときは「配達担当者が未定の伝票」のみ（処理者未入力）。
     /// </summary>
-    /// <param name="date">受付日（yyyy-MM-dd）。省略時は当日</param>
+    /// <param name="date">期日（yyyy-MM-dd）。省略時は直近1ヶ月・期日の新しい順</param>
     /// <param name="assigneeCode">担当者コード（配達担当）。unassignedOnly=false のとき処理者と一致する伝票を表示</param>
     /// <param name="unassignedOnly">true: 配達担当者未定（処理者未入力）の伝票のみ。このとき assigneeCode は不要</param>
     /// <param name="random">true: ランダム取得（テスト用）。このとき date/assigneeCode/unassignedOnly は無視</param>
     /// <param name="subjects">用件で絞り込み（カンマ区切り）。例: 来店(納品),来店(返品)。assigneeCode と併用可</param>
+    /// <param name="excludeSubjects">用件で除外（カンマ区切り）。例: 来店(納品),来店(返品)</param>
     /// <param name="limit">取得件数（1〜50）。省略時 10</param>
     /// <param name="offset">先頭からスキップする件数。省略時 0。random=true のときは無視</param>
     [HttpGet]
@@ -43,6 +44,7 @@ public class ReceptionSlipsController : ControllerBase
         [FromQuery] bool unassignedOnly = false,
         [FromQuery] bool random = false,
         [FromQuery] string? subjects = null,
+        [FromQuery] string? excludeSubjects = null,
         [FromQuery] int limit = 10,
         [FromQuery] int offset = 0,
         CancellationToken cancellationToken = default)
@@ -54,8 +56,17 @@ public class ReceptionSlipsController : ControllerBase
             .Select(s => s!.Trim())
             .Distinct()
             .ToList() ?? new List<string>();
+        var excludeSubjectList = excludeSubjects?
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => s!.Trim())
+            .Distinct()
+            .ToList() ?? new List<string>();
         var take = Math.Clamp(limit, 1, 50);
         var skip = Math.Max(0, offset);
+
+        // ｷｬﾝｾﾙ(配達)=21 / ｷｬﾝｾﾙ(引取)=22 / ｷｬﾝｾﾙ=23 は常に非表示
+        const string hiddenCancelSubjectCodes = "21, 22, 23";
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -65,12 +76,14 @@ public class ReceptionSlipsController : ControllerBase
         string pagingClause;
         if (random)
         {
-            // ランダム取得（テスト用）: 異常日時のみ除外。offset は無視
-            var minValidDate = new DateTime(1900, 1, 1);
+            // ランダム取得（テスト用）: 確認=0・キャンセル除外・期日の直近1ヶ月。offset は無視
+            var minValidDate = DateTime.Today.AddMonths(-1);
             var maxValidDate = DateTime.Today.AddDays(1);
-            whereClause = $@"WHERE r.[受付日時] IS NOT NULL
-                AND r.[受付日時] >= '{minValidDate:yyyy-MM-dd}'
-                AND r.[受付日時] < '{maxValidDate:yyyy-MM-dd}'";
+            whereClause = $@"WHERE r.[期日] IS NOT NULL
+                AND r.[期日] >= '{minValidDate:yyyy-MM-dd}'
+                AND r.[期日] < '{maxValidDate:yyyy-MM-dd}'
+                AND ISNULL(r.[確認], 0) = 0
+                AND ISNULL(r.[用件コード], -1) NOT IN ({hiddenCancelSubjectCodes})";
             orderClause = "ORDER BY NEWID()";
             pagingClause = "TOP (@limit)";
         }
@@ -78,12 +91,14 @@ public class ReceptionSlipsController : ControllerBase
         {
             var whereConditions = new List<string>();
             var maxValidDate = DateTime.Today.AddDays(1);
-            var minValidDate = new DateTime(1900, 1, 1);
-            whereConditions.Add("r.[受付日時] IS NOT NULL");
-            whereConditions.Add($"r.[受付日時] >= '{minValidDate:yyyy-MM-dd}'");
-            whereConditions.Add($"r.[受付日時] < '{maxValidDate:yyyy-MM-dd}'");
-            whereConditions.Add("ISNULL(r.[転記済], 0) = 0");
-            // 用件・担当者は併用可。date 未指定時は全期間から最新順（ページング）
+            // 表示対象は期日のカレンダー月で直近1ヶ月（例: 今日が 10/2 なら 期日 9/2 00:00 以降）
+            var minValidDate = DateTime.Today.AddMonths(-1);
+            whereConditions.Add("r.[期日] IS NOT NULL");
+            whereConditions.Add($"r.[期日] >= '{minValidDate:yyyy-MM-dd}'");
+            whereConditions.Add($"r.[期日] < '{maxValidDate:yyyy-MM-dd}'");
+            whereConditions.Add("ISNULL(r.[確認], 0) = 0");
+            whereConditions.Add($"ISNULL(r.[用件コード], -1) NOT IN ({hiddenCancelSubjectCodes})");
+            // 用件・担当者は併用可。date 未指定時は期日の直近1ヶ月から新しい順（ページング）
             if (subjectList.Count > 0)
             {
                 var subjectCondition = subjectList.Count == 1
@@ -91,14 +106,21 @@ public class ReceptionSlipsController : ControllerBase
                     : "(" + string.Join(" OR ", subjectList.Select((_, i) => $"p.[用件] = @subject{i}")) + ")";
                 whereConditions.Add(subjectCondition);
             }
+            if (excludeSubjectList.Count > 0)
+            {
+                var excludeCondition = excludeSubjectList.Count == 1
+                    ? $"ISNULL(p.[用件], '') <> @excludeSubject0"
+                    : "(" + string.Join(" AND ", excludeSubjectList.Select((_, i) => $"ISNULL(p.[用件], '') <> @excludeSubject{i}")) + ")";
+                whereConditions.Add(excludeCondition);
+            }
             if (date.HasValue)
-                whereConditions.Add("CAST(r.[受付日時] AS DATE) = @targetDate");
+                whereConditions.Add("CAST(r.[期日] AS DATE) = @targetDate");
             if (!unassignedOnly && !string.IsNullOrWhiteSpace(assigneeCode))
                 whereConditions.Add("r.[処理者] = CAST(@assigneeCode AS smallint)");
             else if (unassignedOnly)
                 whereConditions.Add("r.[処理者] IS NULL");
             whereClause = "WHERE " + string.Join(" AND ", whereConditions);
-            orderClause = "ORDER BY r.[受付日時] DESC, r.[受付番号] DESC";
+            orderClause = "ORDER BY r.[期日] DESC, r.[受付番号] DESC";
             pagingClause = string.Empty;
         }
 
@@ -152,6 +174,8 @@ public class ReceptionSlipsController : ControllerBase
             cmdSlip.Parameters.AddWithValue("@offset", skip);
             for (var i = 0; i < subjectList.Count; i++)
                 cmdSlip.Parameters.AddWithValue($"@subject{i}", subjectList[i]);
+            for (var i = 0; i < excludeSubjectList.Count; i++)
+                cmdSlip.Parameters.AddWithValue($"@excludeSubject{i}", excludeSubjectList[i]);
             if (date.HasValue)
                 cmdSlip.Parameters.AddWithValue("@targetDate", targetDate);
             if (!unassignedOnly && !string.IsNullOrWhiteSpace(assigneeCode) && short.TryParse(assigneeCode, out var assigneeCodeNum))
@@ -196,10 +220,21 @@ public class ReceptionSlipsController : ControllerBase
 
         // プレースホルダーを組み立て（IN 句は最大 2100 までなので分割しない簡易実装）
         var inParams = string.Join(", ", receptionNos.Select((_, i) => $"@n{i}"));
+        // その他商品表示台帳にある商品コードは、受付明細.[その他商品] を商品名として返す
         var detailSql = $@"
-            SELECT m.[受付番号], m.[商品コード], p.[商品名], m.[台数], u.[単位] AS [単位名]
+            SELECT
+                m.[受付番号],
+                m.[商品コード],
+                CASE
+                    WHEN o.[商品コード] IS NOT NULL
+                        THEN ISNULL(NULLIF(LTRIM(RTRIM(m.[その他商品])), N''), N'その他商品')
+                    ELSE ISNULL(p.[商品名], N'')
+                END AS [商品名],
+                m.[台数],
+                u.[単位] AS [単位名]
             FROM [dbo].[受付明細] m
             LEFT JOIN [dbo].[商品台帳] p ON p.[商品コード] = m.[商品コード]
+            LEFT JOIN [dbo].[その他商品表示台帳] o ON o.[商品コード] = m.[商品コード]
             LEFT JOIN [dbo].[単位台帳] u ON u.[単位コード] = m.[単位コード]
             WHERE m.[受付番号] IN ({inParams})";
 
@@ -244,8 +279,10 @@ public class ReceptionSlipsController : ControllerBase
     /// <summary>
     /// 受付伝票にタグを紐付けて DB に記録する。
     /// 用件「引取」「来店(返品)」: tag_mode2=在庫 / tag_mode=返品 / complete=1。
+    /// 加えて顧客コード＋現場コード＋tag_id(=EPC) 一致の [納品明細] に [返却]=1（他列は変更しない）。
+    /// 納品明細に該当が無い場合は警告のみ（在庫戻しは成功扱い）。既処理スキップ時も納品明細の返却未設定だけ再試行する。
     /// 用件「交換」+ link_mode=交換納品: tag_mode2=貸出中 / tag_mode=交換納品 / complete=0。
-    /// 用件「交換」+ link_mode=交換返品: tag_mode2=整備中 / tag_mode=交換返品 / complete=1。
+    /// 用件「交換」+ link_mode=交換返品: tag_mode2=整備中 / tag_mode=交換返品 / complete=0。
     /// それ以外（&lt;配達&gt;・来店(納品) 等）: tag_mode2=貸出中 / tag_mode=納品 / complete=0。
     /// ※「交換（配達）」「交換（引取）」は交換ではなく配達モード扱い。
     /// ※同一受付＋同一EPCで complete=1 があれば既処理スキップ（tag_mode は見ない。DELETE/UPDATE/INSERT/台帳変更なし）。
@@ -291,23 +328,27 @@ public class ReceptionSlipsController : ControllerBase
 
         try
         {
-            // 1. 受付番号の存在確認 + 用件取得
+            // 1. 受付番号の存在確認 + 用件・顧客コード・現場コード取得
             const string existsSql = @"
-                SELECT ISNULL(p.[用件], N'')
+                SELECT ISNULL(p.[用件], N''), r.[顧客コード], r.[現場コード]
                 FROM [dbo].[受付台帳] r
                 LEFT JOIN [dbo].[用件台帳] p ON p.[用件コード] = r.[用件コード]
                 WHERE r.[受付番号] = @receptionNo";
             string subject;
+            int? customerCode;
+            int? siteCode;
             await using (var existsCmd = new SqlCommand(existsSql, connection, transaction))
             {
                 existsCmd.Parameters.Add(new SqlParameter("@receptionNo", System.Data.SqlDbType.Int) { Value = receptionNoInt });
-                var scalar = await existsCmd.ExecuteScalarAsync(cancellationToken);
-                if (scalar == null || scalar == DBNull.Value)
+                await using var existsReader = await existsCmd.ExecuteReaderAsync(cancellationToken);
+                if (!await existsReader.ReadAsync(cancellationToken))
                 {
                     await transaction.RollbackAsync(cancellationToken);
                     return NotFound(new { message = "該当する受付伝票が見つかりません。", receptionNo = receptionNoInt.ToString() });
                 }
-                subject = scalar.ToString()?.Trim() ?? string.Empty;
+                subject = existsReader.IsDBNull(0) ? string.Empty : (existsReader.GetString(0).Trim());
+                customerCode = existsReader.IsDBNull(1) ? null : existsReader.GetInt32(1);
+                siteCode = existsReader.IsDBNull(2) ? null : existsReader.GetInt32(2);
             }
 
             // 用件「交換」は完全一致のみ（交換（配達）/交換（引取）は含めない）
@@ -319,6 +360,7 @@ public class ReceptionSlipsController : ControllerBase
             const string exchangeReturnMode = "交換返品";
 
             var isExchange = string.Equals(subject, exchangeSubject, StringComparison.Ordinal);
+            var isPickup = false;
             string ledgerTagMode2;
             string table3TagMode;
             int table3Complete;
@@ -338,7 +380,7 @@ public class ReceptionSlipsController : ControllerBase
                 {
                     ledgerTagMode2 = "整備中";
                     table3TagMode = exchangeReturnMode;
-                    table3Complete = 1;
+                    table3Complete = 0;
                     modeLabel = "ExchangeReturn";
                 }
                 else
@@ -354,7 +396,7 @@ public class ReceptionSlipsController : ControllerBase
             }
             else
             {
-                var isPickup =
+                isPickup =
                     string.Equals(subject, pickupSubject, StringComparison.Ordinal)
                     || string.Equals(subject, visitReturnSubject, StringComparison.Ordinal);
                 ledgerTagMode2 = isPickup ? "在庫" : "貸出中";
@@ -384,6 +426,7 @@ public class ReceptionSlipsController : ControllerBase
             var warnings = new List<string>();
             var missingEpcs = new List<string>();
             var linkedCount = 0;
+            var deliveryReturnUpdated = 0;
 
             foreach (var (epc, productCode) in items)
             {
@@ -409,6 +452,7 @@ public class ReceptionSlipsController : ControllerBase
                 }
 
                 // 同一受付＋同一EPCで complete=1 が1件でもあれば既処理（tag_mode は見ない）
+                // 返品モードでは納品明細の [返却]=1 未設定だけ再試行する
                 const string complete1Sql = @"
                     SELECT COUNT(1)
                     FROM [dbo].[tag_table3]
@@ -428,6 +472,11 @@ public class ReceptionSlipsController : ControllerBase
                     _logger.LogInformation(
                         "link-tags: skip already-complete reception={ReceptionNo} epc={Epc}",
                         receptionNoInt, epc);
+                    if (isPickup)
+                    {
+                        deliveryReturnUpdated += await TryMarkDeliveryDetailReturnedAsync(
+                            connection, transaction, customerCode, siteCode, epc, receptionNoInt, warnings, cancellationToken);
+                    }
                     continue;
                 }
 
@@ -487,6 +536,13 @@ public class ReceptionSlipsController : ControllerBase
                     await insertCmd.ExecuteNonQueryAsync(cancellationToken);
                 }
 
+                // 6. 引取／来店(返品): 既存納品明細へ返却記録（[返却]=1 のみ）
+                if (isPickup)
+                {
+                    deliveryReturnUpdated += await TryMarkDeliveryDetailReturnedAsync(
+                        connection, transaction, customerCode, siteCode, epc, receptionNoInt, warnings, cancellationToken);
+                }
+
                 linkedCount++;
             }
 
@@ -507,6 +563,7 @@ public class ReceptionSlipsController : ControllerBase
             {
                 ReceptionNo = receptionNoInt.ToString(),
                 Linked = linkedCount,
+                DeliveryReturnUpdated = deliveryReturnUpdated,
                 Warnings = warnings,
             });
         }
@@ -515,5 +572,89 @@ public class ReceptionSlipsController : ControllerBase
             await transaction.RollbackAsync(cancellationToken);
             throw;
         }
+    }
+
+    /// <summary>
+    /// 納品明細の既存貸出行に [返却]=1 を付ける。該当なし／既返却は警告のみ（例外にしない）。
+    /// </summary>
+    /// <returns>実際に [返却] を 0→1 にした行数</returns>
+    private async Task<int> TryMarkDeliveryDetailReturnedAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        int? customerCode,
+        int? siteCode,
+        string epc,
+        int receptionNo,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        if (!customerCode.HasValue)
+        {
+            warnings.Add($"EPC {epc}: 受付伝票に顧客コードがないため納品明細の返却を更新できませんでした。");
+            _logger.LogWarning(
+                "link-tags: delivery-return skipped (no customerCode) reception={ReceptionNo} epc={Epc}",
+                receptionNo, epc);
+            return 0;
+        }
+
+        const string matchSql = @"
+            SELECT COUNT(1)
+            FROM [dbo].[納品明細]
+            WHERE [顧客コード] = @customerCode
+              AND (
+                    (@siteCode IS NULL AND [現場コード] IS NULL)
+                    OR [現場コード] = @siteCode
+                  )
+              AND LTRIM(RTRIM([tag_id])) = @epc";
+        int matched;
+        await using (var matchCmd = new SqlCommand(matchSql, connection, transaction))
+        {
+            matchCmd.Parameters.Add(new SqlParameter("@customerCode", System.Data.SqlDbType.Int) { Value = customerCode.Value });
+            matchCmd.Parameters.Add(new SqlParameter("@siteCode", System.Data.SqlDbType.Int) { Value = (object?)siteCode ?? DBNull.Value });
+            matchCmd.Parameters.Add(new SqlParameter("@epc", System.Data.SqlDbType.NVarChar, 50) { Value = epc });
+            matched = Convert.ToInt32(await matchCmd.ExecuteScalarAsync(cancellationToken));
+        }
+
+        if (matched == 0)
+        {
+            warnings.Add($"EPC {epc}: 納品明細に該当する貸出記録がありません（返却=1 未更新）。");
+            _logger.LogWarning(
+                "link-tags: delivery-return no match reception={ReceptionNo} customer={CustomerCode} site={SiteCode} epc={Epc}",
+                receptionNo, customerCode.Value, siteCode, epc);
+            return 0;
+        }
+
+        const string updateSql = @"
+            UPDATE [dbo].[納品明細]
+            SET [返却] = 1
+            WHERE [顧客コード] = @customerCode
+              AND (
+                    (@siteCode IS NULL AND [現場コード] IS NULL)
+                    OR [現場コード] = @siteCode
+                  )
+              AND LTRIM(RTRIM([tag_id])) = @epc
+              AND ISNULL([返却], 0) = 0";
+        int updated;
+        await using (var updateCmd = new SqlCommand(updateSql, connection, transaction))
+        {
+            updateCmd.Parameters.Add(new SqlParameter("@customerCode", System.Data.SqlDbType.Int) { Value = customerCode.Value });
+            updateCmd.Parameters.Add(new SqlParameter("@siteCode", System.Data.SqlDbType.Int) { Value = (object?)siteCode ?? DBNull.Value });
+            updateCmd.Parameters.Add(new SqlParameter("@epc", System.Data.SqlDbType.NVarChar, 50) { Value = epc });
+            updated = await updateCmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (updated == 0)
+        {
+            warnings.Add($"EPC {epc}: 納品明細は既に返却済みのためスキップしました。");
+            _logger.LogInformation(
+                "link-tags: delivery-return already set reception={ReceptionNo} epc={Epc} matched={Matched}",
+                receptionNo, epc, matched);
+            return 0;
+        }
+
+        _logger.LogInformation(
+            "link-tags: delivery-return updated reception={ReceptionNo} customer={CustomerCode} site={SiteCode} epc={Epc} rows={Rows}",
+            receptionNo, customerCode.Value, siteCode, epc, updated);
+        return updated;
     }
 }

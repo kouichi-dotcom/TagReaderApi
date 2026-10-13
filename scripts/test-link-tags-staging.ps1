@@ -582,7 +582,7 @@ try {
     if ($rA14.StatusCode -eq 200) { Track-NewTagTable3Ids -ReceptionNo $ReceptionExchange }
     Assert-StatusCode -Id 'A1-4-HTTP' -Name 'exchange-return HTTP' -Response $rA14 -ExpectedCodes @(200) | Out-Null
     Assert-LedgerAndT3 -Id 'A1-4-DB' -Name 'exchange-return DB' -ReceptionNo $ReceptionExchange -Epc $EpcExchangeReturn `
-        -ExpectMode2 '整備中' -ExpectT3Mode '交換返品' -ExpectComplete 1 | Out-Null
+        -ExpectMode2 '整備中' -ExpectT3Mode '交換返品' -ExpectComplete 0 | Out-Null
 
     Write-Section "A1-5 multi EPC delivery (EpcDelivery2)"
     $bodyA15 = New-LinkBody -Items @(

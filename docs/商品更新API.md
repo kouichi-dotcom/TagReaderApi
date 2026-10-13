@@ -18,6 +18,7 @@
 | user_id | string | - | 担当者コード。整数に変換できれば [tag_table4].[s_code] に記録 |
 | product_id | string | - | 任意 |
 | device_id | string | - | 任意 |
+| storage_location | int | - | 保管場所コード（1=本社, 2=山川, 3=東風平, 4=友寄）。指定時のみ `[保管場所コード]` を更新。未指定時は現状維持 |
 
 ---
 
@@ -28,6 +29,7 @@
 - **条件:** `LTRIM(RTRIM([tag_id2])) = @epc`
 - **更新列:**
   - `[tag_mode2]` = リクエストの `changes.status`
+  - `[保管場所コード]` = リクエストの `storage_location`（1〜4 のときのみ。未指定・範囲外は列を触らない）
   - `[updated]` = サーバー現在時刻（**秒単位**。`CONVERT(..., 120)` でコンマ秒なし）
 
 該当行が 0 件の場合は 404 を返し、以降のログ挿入は行わない。
@@ -78,7 +80,8 @@ ID は IDENTITY で自動採番。
 
 ## 関連テーブル
 
-- **[ICタグ台帳]** … 更新対象。`tag_id2`, `tag_mode2`, `updated` 等。
+- **[ICタグ台帳]** … 更新対象。`tag_id2`, `tag_mode2`, `保管場所コード`, `updated` 等。
+- カラム追加 SQL: `scripts/sql/add-ic-tag-ledger-storage-location-code.sql`
 - **[tag_table4]** … タグモード更新履歴。tag_id2 ごとのログとして利用。
 
 実装: `TagReaderApi/Controllers/ProductUpdatesController.cs`
